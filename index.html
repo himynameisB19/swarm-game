@@ -56,11 +56,23 @@
   .shopbtn { composes: opt; }
   #shop .opt.dis { opacity: .4; }
   .gold { margin-top: 10px; font-size: 18px; font-weight: 800; color: #ffd23f; }
+  #rotate { position: fixed; inset: 0; z-index: 99; display: none; align-items: center; justify-content: center; text-align: center; background: #0a0e1d; font-size: 24px; font-weight: 800; padding: 30px; }
+  @media (orientation: portrait) and (pointer: coarse) { #rotate { display: flex; } }
+  @media (orientation: landscape) {
+    #lu { width: min(88%, 600px); }
+    #opts, #shop { display: flex; gap: 8px; }
+    #opts .opt, #shop .opt { flex: 1; flex-direction: column; text-align: center; justify-content: center; gap: 4px; }
+    #over .big { font-size: 34px; }
+    #over .sub { margin-top: 4px; font-size: 15px; }
+    #over .gold { margin-top: 4px; font-size: 16px; }
+    #over .btn { margin-top: 12px; padding: 11px 0; }
+  }
   .hidden { display: none !important; }
   @media (prefers-reduced-motion: reduce) { #title .btn { animation: none; } }
 </style>
 </head>
 <body>
+<div id="rotate">Rotate your phone to play ↻</div>
 <div id="app"><canvas id="c"></canvas>
 <div class="ui">
   <div id="pausebtn">⏸</div>
@@ -72,7 +84,7 @@
 
   <div id="title" class="panel">
     <div class="big">Swarm</div>
-    <div class="sub">Drag to move. Your weapon fires automatically. Pick a new power every level and see how long you can survive.</div>
+    <div class="sub">Use the joystick to move. Your weapon fires automatically. Pick a new power every level and see how long you can survive.</div>
     <div class="btn">Tap to start</div>
     <div class="sub" id="hint" style="font-size:14px;opacity:.65">For fullscreen, choose “Add to Home Screen” in your browser menu.</div>
   </div>
@@ -107,7 +119,7 @@
   const appEl = $('app');
   function resize() {
     dpr = Math.min(window.devicePixelRatio || 1, 2);
-    W = Math.min(innerWidth, Math.round(innerHeight * 0.5625)); H = innerHeight;
+    W = Math.min(innerWidth, Math.round(innerHeight * 2.2)); H = innerHeight;
     appEl.style.width = W + 'px'; offX = (innerWidth - W) / 2;
     cv.width = W * dpr; cv.height = H * dpr;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -200,6 +212,7 @@
   function start() {
     reset(); state = 'play'; titleEl.classList.add('hidden');
     tone(1, 0.01, 'sine', 0.0001); wakeLock();
+    try { screen.orientation && screen.orientation.lock && screen.orientation.lock('landscape').catch(() => {}); } catch (e) {}
   }
 
   // ---------- Mobil ----------
@@ -207,6 +220,7 @@
   function pause() { if (state !== 'play') return; state = 'paused'; joy.id = null; pauseEl.classList.remove('hidden'); }
   function resume() { if (state !== 'paused') return; state = 'play'; pauseEl.classList.add('hidden'); }
   $('pausebtn').addEventListener('click', pause);
+  matchMedia('(orientation: portrait) and (pointer: coarse)').addEventListener('change', ev => { if (ev.matches) pause(); });
   $('resume').addEventListener('click', resume);
   document.addEventListener('visibilitychange', () => { if (document.hidden && !DEMO) pause(); else wakeLock(); });
   let wl = null;
@@ -220,19 +234,19 @@
 
   // ---------- Girdi ----------
   const joy = { id: null, ox: 0, oy: 0, px: 0, py: 0 };
+  function joyBase() { const r = Math.max(48, Math.min(66, H * 0.17)); return { x: W - r - 56, y: H - r - 30, r }; }
   const keys = {};
   addEventListener('pointerdown', e => {
     if (e.target.closest && e.target.closest('#pausebtn')) return;
     if (state === 'ready') { e.preventDefault(); start(); }
     if (state !== 'play') return;
     e.preventDefault();
-    if (joy.id === null) { joy.id = e.pointerId; joy.ox = joy.px = e.clientX - offX; joy.oy = joy.py = e.clientY; }
+    const b = joyBase(), px = e.clientX - offX;
+    if (joy.id === null && Math.hypot(px - b.x, e.clientY - b.y) < b.r * 2.1) { joy.id = e.pointerId; joy.px = px; joy.py = e.clientY; }
   }, { passive: false });
   addEventListener('pointermove', e => {
     if (e.pointerId !== joy.id) return;
     joy.px = e.clientX - offX; joy.py = e.clientY;
-    const dx = joy.px - joy.ox, dy = joy.py - joy.oy, d = Math.hypot(dx, dy);
-    if (d > 70) { joy.ox += dx / d * (d - 70); joy.oy += dy / d * (d - 70); }   // yüzen joystick
   });
   const upEv = e => { if (e.pointerId === joy.id) joy.id = null; };
   addEventListener('pointerup', upEv); addEventListener('pointercancel', upEv);
@@ -242,8 +256,8 @@
 
   function inputVec() {
     if (joy.id !== null) {
-      const dx = joy.px - joy.ox, dy = joy.py - joy.oy, d = Math.hypot(dx, dy);
-      if (d > 6) { const m = Math.min(d, 70) / 70; return [dx / d * m, dy / d * m]; }
+      const b = joyBase(), dx = joy.px - b.x, dy = joy.py - b.y, d = Math.hypot(dx, dy);
+      if (d > 6) { const m = Math.min(d, b.r) / b.r; return [dx / d * m, dy / d * m]; }
       return [0, 0];
     }
     const ix = (keys.ArrowRight || keys.KeyD ? 1 : 0) - (keys.ArrowLeft || keys.KeyA ? 1 : 0);
@@ -621,12 +635,15 @@
     ctx.fillStyle = vig; ctx.fillRect(0, 0, W, H);
     if (flash > 0) { ctx.fillStyle = `rgba(255,40,70,${flash * 0.6})`; ctx.fillRect(0, 0, W, H); }
 
-    // joystick
-    if (joy.id !== null && state === 'play') {
-      const dx = joy.px - joy.ox, dy = joy.py - joy.oy, d = Math.hypot(dx, dy) || 1, m = Math.min(d, 70);
-      ctx.strokeStyle = 'rgba(255,255,255,.4)'; ctx.lineWidth = 3;
-      ctx.beginPath(); ctx.arc(joy.ox, joy.oy, 70, 0, 6.2832); ctx.stroke();
-      ctx.fillStyle = 'rgba(255,255,255,.35)'; circle(joy.ox + dx / d * m, joy.oy + dy / d * m, 26);
+    // joystick (sabit, sağ alt)
+    if (!DEMO && state !== 'over') {
+      const b = joyBase();
+      let kx = b.x, ky = b.y;
+      if (joy.id !== null) { const dx = joy.px - b.x, dy = joy.py - b.y, d = Math.hypot(dx, dy) || 1, m = Math.min(d, b.r); kx += dx / d * m; ky += dy / d * m; }
+      ctx.fillStyle = 'rgba(255,255,255,.08)'; circle(b.x, b.y, b.r);
+      ctx.strokeStyle = 'rgba(255,255,255,.35)'; ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.arc(b.x, b.y, b.r, 0, 6.2832); ctx.stroke();
+      ctx.fillStyle = joy.id !== null ? 'rgba(255,255,255,.55)' : 'rgba(255,255,255,.3)'; circle(kx, ky, b.r * 0.42);
     }
   }
 
