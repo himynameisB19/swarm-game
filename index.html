@@ -84,7 +84,7 @@
 
   <div id="title" class="panel">
     <div class="big">Swarm</div>
-    <div class="sub">Use the joystick to move. Your weapon fires automatically. Pick a new power every level and see how long you can survive.</div>
+    <div class="sub">Use the joystick to move. Hold FIRE to shoot. Pick a new power every level and see how long you can survive.</div>
     <div class="btn">Tap to start</div>
     <div class="sub" id="hint" style="font-size:14px;opacity:.65">For fullscreen, choose “Add to Home Screen” in your browser menu.</div>
   </div>
@@ -235,6 +235,8 @@
   // ---------- Girdi ----------
   const joy = { id: null, ox: 0, oy: 0, px: 0, py: 0 };
   function joyBase() { const r = Math.max(48, Math.min(66, H * 0.17)); return { x: W - r - 56, y: H - r - 30, r }; }
+  let fireId = null;
+  function fireBase() { const r = Math.max(52, Math.min(74, H * 0.2)); return { x: r + 56, y: H - r - 30, r }; }
   const keys = {};
   addEventListener('pointerdown', e => {
     if (e.target.closest && e.target.closest('#pausebtn')) return;
@@ -243,12 +245,14 @@
     e.preventDefault();
     const b = joyBase(), px = e.clientX - offX;
     if (joy.id === null && Math.hypot(px - b.x, e.clientY - b.y) < b.r * 2.1) { joy.id = e.pointerId; joy.px = px; joy.py = e.clientY; }
+    const fb = fireBase();
+    if (fireId === null && Math.hypot(px - fb.x, e.clientY - fb.y) < fb.r * 1.5) fireId = e.pointerId;
   }, { passive: false });
   addEventListener('pointermove', e => {
     if (e.pointerId !== joy.id) return;
     joy.px = e.clientX - offX; joy.py = e.clientY;
   });
-  const upEv = e => { if (e.pointerId === joy.id) joy.id = null; };
+  const upEv = e => { if (e.pointerId === joy.id) joy.id = null; if (e.pointerId === fireId) fireId = null; };
   addEventListener('pointerup', upEv); addEventListener('pointercancel', upEv);
   addEventListener('contextmenu', e => e.preventDefault());
   addEventListener('keydown', e => { keys[e.code] = true; if (state === 'ready' && e.code === 'Space') start(); });
@@ -417,23 +421,24 @@
     const sp = speedStat(), a = 1 - Math.pow(0.0005, dt);
     player.vx += (ix * sp - player.vx) * a; player.vy += (iy * sp - player.vy) * a;
     player.x += player.vx * dt; player.y += player.vy * dt;
+    if (Math.hypot(player.vx, player.vy) > 25) player.aim = Math.atan2(player.vy, player.vx);
     player.inv = Math.max(0, player.inv - dt);
     player.hp = Math.min(player.maxHp, player.hp + 0.8 * dt);
     cx += (player.x - cx) * (1 - Math.pow(0.0001, dt)); cy += (player.y - cy) * (1 - Math.pow(0.0001, dt));
 
-    // otomatik ateş
-    fireT -= dt;
-    if (fireT <= 0) {
+    // elle ateş: butona basılı tutulunca (demo modunda otomatik)
+    fireT = Math.max(0, fireT - dt);
+    if (fireT <= 0 && (fireId !== null || DEMO || keys.Space || keys.KeyJ)) {
       let tg = null, bd = 460 * 460;
       for (const e of enemies) { const dx = e.x - player.x, dy = e.y - player.y, d2 = dx * dx + dy * dy; if (d2 < bd) { bd = d2; tg = e; } }
-      if (tg) {
-        const base = Math.atan2(tg.y - player.y, tg.x - player.x), n = 1 + up.multi;
+      {
+        const base = tg ? Math.atan2(tg.y - player.y, tg.x - player.x) : (player.aim || 0), n = 1 + up.multi;
         for (let i = 0; i < n && bullets.length < 160; i++) {
           const ang = base + (i - (n - 1) / 2) * 0.17;
           bullets.push({ x: player.x, y: player.y, vx: Math.cos(ang) * 560, vy: Math.sin(ang) * 560, dmg: dmgStat() * 1.2, pierce: up.pierce, life: 1.1, hits: [], dead: false });
         }
         fireT = 1 / fireRate();
-      } else fireT = 0.05;
+      }
     }
 
     // dönen bıçaklar
@@ -644,6 +649,12 @@
       ctx.strokeStyle = 'rgba(255,255,255,.35)'; ctx.lineWidth = 3;
       ctx.beginPath(); ctx.arc(b.x, b.y, b.r, 0, 6.2832); ctx.stroke();
       ctx.fillStyle = joy.id !== null ? 'rgba(255,255,255,.55)' : 'rgba(255,255,255,.3)'; circle(kx, ky, b.r * 0.42);
+      const f = fireBase(), on = fireId !== null;
+      ctx.fillStyle = on ? 'rgba(255,70,100,.55)' : 'rgba(255,70,100,.2)'; circle(f.x, f.y, f.r * (on ? 0.92 : 1));
+      ctx.strokeStyle = 'rgba(255,130,150,.85)'; ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.arc(f.x, f.y, f.r * (on ? 0.92 : 1), 0, 6.2832); ctx.stroke();
+      ctx.fillStyle = '#fff'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.font = `900 ${Math.round(f.r * 0.38)}px "Trebuchet MS", sans-serif`; ctx.fillText('FIRE', f.x, f.y + 1);
     }
   }
 
